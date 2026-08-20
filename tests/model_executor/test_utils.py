@@ -5,7 +5,11 @@
 import pytest
 import torch
 
-from vllm.model_executor.parameter import ModelWeightParameter, PackedvLLMParameter
+from vllm.model_executor.parameter import (
+    BasevLLMParameter,
+    ModelWeightParameter,
+    PackedvLLMParameter,
+)
 from vllm.model_executor.utils import replace_parameter
 
 
@@ -20,6 +24,26 @@ def single_rank_tp(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "vllm.model_executor.parameter.get_tensor_model_parallel_world_size", lambda: 1
     )
+
+
+def test_base_parameter_rejects_mismatched_weight_shape(single_rank_tp: None) -> None:
+    parameter = BasevLLMParameter(data=torch.zeros(2), weight_loader=lambda: None)
+
+    with pytest.raises(
+        ValueError,
+        match=r"weight shape mismatch: parameter has \(2,\), loaded weight has \(1,\)",
+    ):
+        parameter.load_column_parallel_weight(torch.ones(1))
+
+
+def test_base_parameter_loads_scalar_into_single_element_tensor(
+    single_rank_tp: None,
+) -> None:
+    parameter = BasevLLMParameter(data=torch.zeros(1), weight_loader=lambda: None)
+
+    parameter.load_column_parallel_weight(torch.tensor(7.0))
+
+    assert torch.equal(parameter, torch.tensor([7.0]))
 
 
 @pytest.mark.parametrize("prefer_copy", [False, True])
